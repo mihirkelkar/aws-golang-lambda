@@ -1,42 +1,63 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
-	"strconv"
+	"net/http"
+	"os"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
+
+	"github.com/aws/aws-sdk-go-v2/aws/external"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
 type Movie struct {
-	ID   int    `json:"id"`
+	ID   string `json:"id"`
 	Name string `json:"name"`
 }
 
-var movies = []Movie{
-	Movie{ID: 1, Name: "Avengers"},
-	Movie{ID: 2, Name: "Ant-Man"},
-	Movie{ID: 3, Name: "Thor"},
-	Movie{ID: 4, Name: "Hulk"},
-	Movie{ID: 5, Name: "Doctor Strange"},
-}
-
 func FindOne(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	id, err := strconv.Atoi(req.PathParameters["id"])
+	id := req.PathParameters["id"]
+
+	cfg, err := external.LoadDefaultAWSConfig()
 
 	if err != nil {
 		return events.APIGatewayProxyResponse{
-			StatusCode: 500,
-			Body:       "ID is not a number",
+			StatusCode: http.StatusInternalServerError,
+			Body:       "Error while retrieving AWS credentials",
 		}, nil
 	}
 
-	response, err := json.Marshal(movies[id-1])
+	svc := dynamodb.New(cfg)
+	request := svc.GetItemRequest(&dynamodb.GetItemInput{
+		TableName: aws.String(os.Getenv("TABLE_NAME")),
+		Key: map[string]dynamodb.AttributeValue{
+			"ID": dynamodb.AttributeValue{S: aws.String(id)},
+		},
+	})
+
+	res, err := request.Send(context.Background())
 
 	if err != nil {
 		return events.APIGatewayProxyResponse{
-			StatusCode: 500,
-			Body:       "ID is not a number",
+			StatusCode: http.StatusInternalServerError,
+			Body:       "Error while fetching movie from DynamoDB",
+		}, nil
+	}
+
+	movie := Movie{
+		ID:   *res.Item["ID"].S,
+		Name: *res.Item["Name"].S,
+	}
+
+	response, err := json.Marshal(movie)
+	if err != nil {
+		return events.APIGatewayProxyResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       "Error while decoding to string value",
 		}, nil
 	}
 
