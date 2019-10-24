@@ -19,7 +19,8 @@ type Movie struct {
 	Name string `json:"name"`
 }
 
-func FindAll() (events.APIGatewayProxyResponse, error) {
+func FindAll(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+
 	cfg, err := external.LoadDefaultAWSConfig()
 	if err != nil {
 		return events.APIGatewayProxyResponse{
@@ -28,9 +29,18 @@ func FindAll() (events.APIGatewayProxyResponse, error) {
 		}, nil
 	}
 
+	size, err := strconv.Atoi(request.Headers["Count"])
+	if err != nil {
+		return events.APIGatewayProxyResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       "Count header should be a number",
+		}, nil
+	}
+
 	svc := dynamodb.New(cfg)
 	req := svc.ScanRequest(&dynamodb.ScanInput{
 		TableName: aws.String("movies"),
+		Limit:     aws.Int64(int64(size)),
 	})
 
 	res, err := req.Send(context.Background())
